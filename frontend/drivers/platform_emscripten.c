@@ -136,8 +136,12 @@ void retro_sleep(unsigned msec)
    else
       emscripten_thread_sleep(msec);
 #else
+#if defined(TIZEN)
+   usleep(msec * 1000);
+#else
    /* also works on main thread, but uses busy wait */
    emscripten_thread_sleep(msec);
+#endif
 #endif
 }
 
@@ -276,6 +280,7 @@ void cmd_cheat_apply_cheats(void)
 
 /* javascript callbacks */
 
+EMSCRIPTEN_KEEPALIVE
 void platform_emscripten_update_canvas_dimensions_cb(int width, int height, double *dpr)
 {
    printf("[INFO] Setting real canvas size: %d x %d\n", width, height);
@@ -287,6 +292,7 @@ void platform_emscripten_update_canvas_dimensions_cb(int width, int height, doub
    PLATFORM_SETVAL(f64, &emscripten_platform_data->device_pixel_ratio, *dpr);
 }
 
+EMSCRIPTEN_KEEPALIVE
 void platform_emscripten_update_window_hidden_cb(bool hidden)
 {
    if (!emscripten_platform_data)
@@ -294,6 +300,7 @@ void platform_emscripten_update_window_hidden_cb(bool hidden)
    emscripten_platform_data->window_hidden = hidden;
 }
 
+EMSCRIPTEN_KEEPALIVE
 void platform_emscripten_update_power_state_cb(bool supported, int discharge_time, float level, bool charging)
 {
    if (!emscripten_platform_data)
@@ -304,6 +311,7 @@ void platform_emscripten_update_power_state_cb(bool supported, int discharge_tim
    PLATFORM_SETVAL(f32, &emscripten_platform_data->power_state_level,          level);
 }
 
+EMSCRIPTEN_KEEPALIVE
 void platform_emscripten_update_memory_usage_cb(uint64_t used, uint64_t limit)
 {
    if (!emscripten_platform_data)
@@ -317,6 +325,7 @@ static void fullscreen_update(void *data)
    command_event(CMD_EVENT_FULLSCREEN_TOGGLE, NULL);
 }
 
+EMSCRIPTEN_KEEPALIVE
 void platform_emscripten_update_fullscreen_state_cb(bool state)
 {
    if (state == emscripten_platform_data->fullscreen || (state && emscripten_platform_data->disable_detect_enter_fullscreen))
@@ -326,12 +335,14 @@ void platform_emscripten_update_fullscreen_state_cb(bool state)
    platform_emscripten_run_on_program_thread_async(fullscreen_update, NULL);
 }
 
+EMSCRIPTEN_KEEPALIVE
 void platform_emscripten_gl_context_lost_cb(void)
 {
    printf("[WARN] WebGL context lost!\n");
    emscripten_platform_data->gl_context_lost = true;
 }
 
+EMSCRIPTEN_KEEPALIVE
 void platform_emscripten_gl_context_restored_cb(void)
 {
    printf("[INFO] WebGL context restored.\n");
@@ -340,6 +351,7 @@ void platform_emscripten_gl_context_restored_cb(void)
    command_event(CMD_EVENT_REINIT, NULL);
 }
 
+EMSCRIPTEN_KEEPALIVE
 void platform_emscripten_command_raise_flag()
 {
    if (!emscripten_platform_data)
@@ -591,6 +603,7 @@ void platform_emscripten_set_canvas_size(unsigned dims)
          (int)VIDEO_SCALE_H(dims));
 }
 
+EMSCRIPTEN_KEEPALIVE
 enum platform_emscripten_browser platform_emscripten_get_browser(void)
 {
    return emscripten_platform_data->browser;
@@ -1039,7 +1052,7 @@ int main(int argc, char *argv[])
    emscripten_platform_data->enable_set_canvas_size = !!getenv("ENABLE_SET_CANVAS_SIZE");
    emscripten_platform_data->disable_detect_enter_fullscreen = !!getenv("DISABLE_DETECT_ENTER_FULLSCREEN");
    emscripten_platform_data->has_async_atomics = EM_ASM_INT({
-      return Atomics?.waitAsync?.toString().includes("[native code]");
+      return Atomics && Atomics.waitAsync && Atomics.waitAsync.toString().includes("[native code]");
    });
 
    EM_ASM({

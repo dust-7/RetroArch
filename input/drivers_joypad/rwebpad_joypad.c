@@ -18,6 +18,9 @@
 
 #include <boolean.h>
 #include <retro_miscellaneous.h>
+#if defined(TIZEN)
+#include <emscripten.h>
+#endif
 #include <emscripten/html5.h>
 #include "../../frontend/drivers/platform_emscripten.h"
 
@@ -212,7 +215,7 @@ static void rwebpad_joypad_update_rumble(unsigned port)
    {
       EM_ASM({
          try {
-            JSEvents?.lastGamepadState?.[$0]?.vibrationActuator?.playEffect?.("dual-rumble", {"startDelay": 0, "duration": 200, "strongMagnitude": $1 / 65535, "weakMagnitude": $2 / 65535});
+            JSEvents && JSEvents.lastGamepadState && JSEvents.lastGamepadState[$0] && JSEvents.lastGamepadState[$0].vibrationActuator && JSEvents.lastGamepadState[$0].vibrationActuator.playEffect && JSEvents.lastGamepadState[$0].vibrationActuator.playEffect("dual-rumble", {"startDelay": 0, "duration": 200, "strongMagnitude": $1 / 65535, "weakMagnitude": $2 / 65535});
          } catch (e) {}
       }, port, rwebpad_joypad_data->rumble[port].strong, rwebpad_joypad_data->rumble[port].weak);
    }
@@ -220,7 +223,7 @@ static void rwebpad_joypad_update_rumble(unsigned port)
    {
       EM_ASM({
          try {
-            JSEvents?.lastGamepadState?.[$0]?.vibrationActuator?.reset?.();
+            JSEvents && JSEvents.lastGamepadState && JSEvents.lastGamepadState[$0] && JSEvents.lastGamepadState[$0].vibrationActuator && JSEvents.lastGamepadState[$0].vibrationActuator.reset && JSEvents.lastGamepadState[$0].vibrationActuator.reset();
          } catch (e) {}
       }, port);
    }

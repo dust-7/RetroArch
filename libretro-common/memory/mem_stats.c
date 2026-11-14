@@ -113,7 +113,9 @@ typedef struct
 #define sys_memory_get_user_memory_size(x) system_call_1(352, x)
 #endif
 #elif defined(MEM_STATS_EMSCRIPTEN)
+#if !defined(TIZEN)
 #include <emscripten/heap.h>
+#endif
 #include <malloc.h>
 #elif defined(MEM_STATS_APPLE)
 #include <TargetConditionals.h>
@@ -355,7 +357,12 @@ uint64_t mem_stats_total(void)
 #elif defined(MEM_STATS_EMSCRIPTEN)
    /* The ceiling the module may grow its heap to, which is the only
     * "total" that means anything in a wasm process. */
+#if defined(TIZEN)
+   extern size_t emscripten_get_heap_size(void);
+   return (uint64_t)emscripten_get_heap_size();
+#else
    return (uint64_t)emscripten_get_heap_max();
+#endif
 #elif defined(MEM_STATS_PS2)
    return mem_stats_ps2_ram();
 #elif defined(MEM_STATS_APPLE)
@@ -498,7 +505,12 @@ uint64_t mem_stats_free(void)
     * business, so counting from the maximum is what a caller asking
     * whether it can afford something wants to know. */
    {
+#if defined(TIZEN)
+      extern size_t emscripten_get_heap_size(void);
+      uint64_t limit = (uint64_t)emscripten_get_heap_size();
+#else
       uint64_t limit = (uint64_t)emscripten_get_heap_max();
+#endif
       uint64_t used  = (uint64_t)mallinfo().uordblks;
       return (limit > used) ? (limit - used) : 0;
    }

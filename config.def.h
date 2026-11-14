@@ -2320,11 +2320,15 @@
 #define DEFAULT_BUILDBOT_SERVER_URL "http://buildbot.libretro.com/nightly/nintendo/switch/libnx/latest/"
 #elif defined(_3DS)
 #define DEFAULT_BUILDBOT_SERVER_URL envIsHomebrew() ? "http://buildbot.libretro.com/nightly/nintendo/3ds/latest/3dsx/" : "http://buildbot.libretro.com/nightly/nintendo/3ds/latest/cia/"
+#elif defined(TIZEN)
+#define DEFAULT_BUILDBOT_SERVER_URL "https://dust-7.github.io/retroarch-tizen/cores/"
 #else
 #define DEFAULT_BUILDBOT_SERVER_URL ""
 #endif
 
-#ifdef __EMSCRIPTEN__
+#if defined(TIZEN)
+#define DEFAULT_BUILDBOT_ASSETS_SERVER_URL "https://dust-7.github.io/retroarch-tizen/assets/"
+#elif defined(__EMSCRIPTEN__)
 #define DEFAULT_BUILDBOT_ASSETS_SERVER_URL "https://buildbot.libretro.com/assets/"
 #else
 #define DEFAULT_BUILDBOT_ASSETS_SERVER_URL "http://buildbot.libretro.com/assets/"

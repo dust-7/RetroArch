@@ -209,6 +209,8 @@ size_t frontend_driver_get_core_extension(char *s, size_t len)
    if (envIsHomebrew())
       return strlcpy_lit(s, "3dsx", len);
    return strlcpy_lit(s, "cia", len);
+#elif defined(TIZEN)
+   return strlcpy_lit(s, "wasm", len);
 #elif defined(__EMSCRIPTEN__)
    /* may not contain the core */
    return strlcpy_lit(s, "core", len);
