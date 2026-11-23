@@ -13,7 +13,7 @@ OS = Emscripten
 OBJ :=
 DEFINES := -DRARCH_INTERNAL -DHAVE_MAIN
 DEFINES += -DTIZEN
-DEFINES += -DHAVE_FILTERS_BUILTIN -DHAVE_ONLINE_UPDATER -DHAVE_UPDATE_ASSETS -DHAVE_UPDATE_CORES -DHAVE_UPDATE_CORE_INFO
+DEFINES += -DHAVE_FILTERS_BUILTIN -DHAVE_ONLINE_UPDATER -DHAVE_UPDATE_CORES
 
 HAVE_STATESTREAM ?= 1
 HAVE_PATCH = 1
@@ -21,9 +21,9 @@ HAVE_DSP_FILTER = 1
 HAVE_VIDEO_FILTER = 1
 HAVE_OVERLAY = 1
 HAVE_NETWORKING ?= 1
-HAVE_LIBRETRODB = 1
+HAVE_LIBRETRODB = 0
 HAVE_COMPRESSION = 1
-HAVE_UPDATE_ASSETS = 1
+HAVE_UPDATE_ASSETS = 0
 HAVE_ONLINE_UPDATER = 1
 HAVE_GLSL = 1
 HAVE_SCREENSHOTS = 1
@@ -48,8 +48,8 @@ HAVE_SHADERPIPELINE = 1
 HAVE_STATIC_VIDEO_FILTERS = 1
 HAVE_STATIC_AUDIO_FILTERS = 1
 HAVE_CONFIGFILE = 1
-HAVE_COMMAND = 1
-HAVE_STDIN_CMD ?= 1
+HAVE_COMMAND = 0
+HAVE_STDIN_CMD = 0
 HAVE_CHEATS = 1
 HAVE_RMODTRACKER = 1
 HAVE_CORE_INFO_CACHE = 1
@@ -143,9 +143,9 @@ INITIAL_HEAP ?= 134217728
 
 OBJDIR := obj-emscripten
 
-EXPORTED_FUNCTIONS = ["_main","_malloc","_free","_cmd_savefiles","_cmd_save_state","_cmd_load_state","_cmd_undo_save_state","_cmd_undo_load_state","_cmd_toggle_fullscreen","_cmd_take_screenshot","_cmd_toggle_menu","_cmd_reload_config","_cmd_toggle_grab_mouse","_cmd_toggle_game_focus","_cmd_reset","_cmd_toggle_pause","_cmd_pause","_cmd_unpause","_cmd_set_volume","_cmd_set_shader","_cmd_cheat_set_code","_cmd_cheat_get_code","_cmd_cheat_toggle_index","_cmd_cheat_get_code_state","_cmd_cheat_realloc","_cmd_cheat_get_size","_cmd_cheat_apply_cheats"]
+EXPORTED_FUNCTIONS = ["_main","_malloc","_free"]
 
-EXPORTS := ["callMain","FS","PATH","ERRNO_CODES","ENV","stringToNewUTF8","UTF8ToString","Browser","EmscriptenSendCommand","EmscriptenReceiveCommandReply"]
+EXPORTS := ["callMain","FS","PATH","ERRNO_CODES","ENV","stringToNewUTF8","UTF8ToString"]
 
 LIBS   := -s USE_ZLIB=1
 CFLAGS := -s USE_ZLIB=1
