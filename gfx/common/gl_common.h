@@ -27,6 +27,27 @@ void gl_finish(void);
 
 void gl_flush(void);
 
+#if defined(HAVE_SHADERPIPELINE) && !defined(HAVE_PSGL) \
+      && (defined(HAVE_GLSL) || defined(HAVE_CG) || defined(HAVE_OPENGL_CORE))
+#define HAVE_GL_MENU_BLOOM
+#include <boolean.h>
+typedef struct gl_menu_bloom gl_menu_bloom_t;
+unsigned gl_menu_bloom_begin(gl_menu_bloom_t **bloom,
+      unsigned dims, bool core, bool es, bool defer);
+void gl_menu_bloom_end(gl_menu_bloom_t *bloom, unsigned dims, bool defer);
+void gl_menu_bloom_composite(gl_menu_bloom_t *bloom, unsigned dims);
+void gl_menu_bloom_free(gl_menu_bloom_t **bloom);
+/* The menu's backdrop blur over the bound framebuffer, as
+ * gfx_display_ctx_driver_t's blur_rect; false where the context cannot
+ * blit (GLES 2) or the images cannot be made */
+#if !defined(HAVE_OPENGLES) || defined(HAVE_OPENGLES3)
+#define HAVE_GL_MENU_BLUR
+bool gl_menu_blur(gl_menu_bloom_t **bloom, unsigned video_dims,
+      int x, int y, unsigned dims, float alpha, float dim,
+      bool core, bool es);
+#endif
+#endif
+
 /* Upload memory mapped for good: GL 4.4 or ARB_buffer_storage on the
  * desktop, GLES 3.0 with EXT_buffer_storage (checked at run time).
  * Texture lending additionally requires GLES 3.1 level queries. */
@@ -178,6 +199,11 @@ unsigned gl_planar_load(gl_planar_t *p, const struct texture_image *ti,
 /* The next frame into a texture gl_planar_load made; false when @tex
  * is not one or the frame does not fit it */
 bool gl_planar_update(gl_planar_t *p, unsigned tex,
+      const struct texture_image *ti);
+
+/* Convert into compatible caller-owned RGB storage without changing @tex's
+ * public identity or duplicating the uploaded planes. */
+bool gl_planar_update_target(gl_planar_t *p, unsigned tex, unsigned target,
       const struct texture_image *ti);
 
 /* Before @tex is deleted: its planes and framebuffer go. Any texture. */

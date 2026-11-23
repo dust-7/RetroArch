@@ -65,7 +65,24 @@ enum video_player_flags
     * ends the playback on the last good frame. */
    VIDEO_PLAYER_FP16   = (1 << 1),
    /* Decode frames on the polling thread; cold hardware setup may use the worker. */
-   VIDEO_PLAYER_INLINE = (1 << 2)
+   VIDEO_PLAYER_INLINE = (1 << 2),
+   /* Frames as the decoded planes, packed I420 of the frame's size in
+    * the slot (image_transfer_anim_stream_set_planar), each with its
+    * video_player_frame_t::yuv. Only for a stream that can
+    * (image_transfer_anim_stream_can_planar) and a sink with slots;
+    * any frame that does not come out so ends the playback. Takes
+    * precedence over VIDEO_PLAYER_FP16. */
+   VIDEO_PLAYER_I420   = (1 << 3),
+   /* With I420, an inline sink may read decoder-owned planes directly.
+    * Consume them in present, copy them, or hold them with HOLD_CANVAS.
+    * Worker decoding always keeps the packed-slot fallback. */
+   VIDEO_PLAYER_BORROW_PLANES = (1 << 4),
+   /* With BORROW_PLANES, also accept decoder row padding. Without it,
+    * only tight planes are borrowed, preserving efficient row uploads. */
+   VIDEO_PLAYER_BORROW_STRIDED = (1 << 5),
+   /* An inline sink may queue decoder-owned pixels or planes until
+    * slot_released(0). Poll stop until it succeeds before freeing the stream. */
+   VIDEO_PLAYER_HOLD_CANVAS = (1 << 6)
 };
 
 /* How a frame reached its buffer. */
@@ -99,8 +116,8 @@ typedef struct video_player_frame
 {
    /* Movie timeline, including completed loops; -1 when unavailable. */
    int64_t time_us;
-   /* The frame in the stream's canvas, valid until the next poll; NULL
-    * when it is in the slot. */
+   /* The stream's canvas, valid until the next poll, or slot_released(0)
+    * after a HOLD_CANVAS sink queues it. NULL when it is in the slot. */
    const uint32_t *pixels;
    unsigned slot;
    unsigned width, height;
@@ -115,6 +132,13 @@ typedef struct video_player_frame
     * by the player. A movie frame decoded ahead on the polling thread
     * is also retained for retry until taken, replaced by a seek or freed. */
    const video_hw_frame_t *hw;
+   /* A VIDEO_PLAYER_I420 frame's IMAGE_YUV_FLAG_* (BT709, FULL_RANGE);
+    * 0 otherwise. */
+   unsigned yuv;
+   /* Non-NULL only for an opted-in inline sink. Read these planes
+    * instead of the slot. HOLD_CANVAS keeps a queued borrow until
+    * slot_released(0); otherwise the next decode invalidates it. */
+   const struct texture_planar *planar;
 } video_player_frame_t;
 
 typedef struct video_player_sink
@@ -163,8 +187,9 @@ video_player_t *video_player_new(void *stream, enum image_type_enum type,
  * waited out. Every started slot is ended. */
 void video_player_free(video_player_t *p);
 
-/* Cancels queued work without waiting. False: running decode/setup still
- * borrows the player, stream and sink; retain them and poll stop again.
+/* Cancels queued work without waiting. False: running decode/setup or
+ * a queued HOLD_CANVAS frame still borrows the player, stream and sink;
+ * retain them and poll stop again.
  * True: free() will not wait. A stopped player cannot resume. */
 bool video_player_stop(video_player_t *p);
 

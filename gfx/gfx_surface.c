@@ -15,6 +15,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <formats/image_narrow.h>
 
 #include <retro_atomic.h>
 #include <retro_miscellaneous.h>
@@ -127,6 +128,10 @@ bool gfx_surface_query_requirements(unsigned width,
    if (     video_driver_supports_texture_format(TEXTURE_GPU_FORMAT_RGBA16F)
          && video_driver_supports_texture_format(TEXTURE_GPU_FORMAT_SCRGB))
       req->formats |= IMAGE_PIXFMT_FP16;
+   /* 8-bit 4:2:0 planes the driver converts itself: a planar
+    * producer hands those over unconverted (gfx_surface_submit_planes) */
+   if (video_driver_supports_texture_format(TEXTURE_GPU_FORMAT_YUV420))
+      req->formats |= IMAGE_PIXFMT_I420 | IMAGE_PIXFMT_NV12;
    if (req->formats & IMAGE_PIXFMT_FP16)
       req->preferred = IMAGE_PIXFMT_FP16;
    else if (req->formats & IMAGE_PIXFMT_2101010)
@@ -136,6 +141,8 @@ bool gfx_surface_query_requirements(unsigned width,
    if ((size_t)width > ((size_t)-1) / IMAGE_PIXFMT_BPP(req->preferred))
       return false;
    req->can_update = video_driver_texture_can_update();
+   req->planar_strided = (req->formats & IMAGE_PIXFMT_I420)
+      && video_driver_supports_texture_format(TEXTURE_GPU_FORMAT_YUV420_STRIDED);
    /* Ordinary uploads use packed rows. Streaming lends negotiate
     * each slot's pitch separately. */
    req->pitch      = (size_t)width * IMAGE_PIXFMT_BPP(req->preferred);
@@ -309,7 +316,9 @@ static void gfx_surface_unlend(gfx_surface_t *s, bool preserve)
    {
       size_t row = (size_t)VIDEO_SCALE_W(s->dims) * IMAGE_PIXFMT_BPP(s->pixfmt);
       if (preserve && s->slots[i] != s->own_slots[i]
-            && !(s->writing & (1u << i)))
+            && !(s->writing & (1u << i))
+            && !(i == s->inflight_slot && s->img.pixels == s->own_slots[i]
+               && s->img_pitch == row))
       {
          unsigned y;
          unsigned dslot = s->num_slots == 1 ? s->lent_cur : i;
@@ -922,6 +931,7 @@ enum gfx_surface_submit_result gfx_surface_submit_pixels(gfx_surface_t *s,
 {
    enum gfx_surface_submit_result r;
    uint8_t fmt;
+   bool narrow;
 
    if (!s || !pixels || !s->num_slots)
    {
@@ -941,13 +951,14 @@ enum gfx_surface_submit_result gfx_surface_submit_pixels(gfx_surface_t *s,
       return gfx_surface_submit_planes(s, &p, rgba);
    }
 
+   narrow = gfx_surface_must_narrow(s->pixfmt);
+
    /* The caller's buffer does not outlive this call for the video
     * thread's purposes, and is not the surface's to narrow; a slot is
-    * both. One copy, the size of a frame, against a wait of up to a
-    * present. */
+    * both. Narrow on the way into it when required; otherwise copy. */
    /* With a slot lent, the driver's copy path may have no slot of its
     * own left, so the frame goes through slot 0 like the rest. */
-   if (     gfx_surface_must_narrow(s->pixfmt)
+   if (     narrow
          || s->lent
 #ifdef HAVE_THREADS
          || video_driver_thread_wrapper_active()
@@ -959,10 +970,33 @@ enum gfx_surface_submit_result gfx_surface_submit_pixels(gfx_surface_t *s,
          GFX_INSTR_INC(GFX_INSTR_SUBMIT_BUSY);
          return GFX_SURFACE_SUBMIT_BUSY;
       }
-      GFX_INSTR_INC(GFX_INSTR_SUBMIT_COPY);
       {
          unsigned y;
          size_t row = (size_t)VIDEO_SCALE_W(s->dims) * IMAGE_PIXFMT_BPP(s->pixfmt);
+         if (narrow)
+         {
+            /* Read the caller's cached pixels once and convert straight
+             * into the slot, including a driver's padded upload loan. */
+            if (s->pitch[0] == row)
+               image_texture_narrow_10bit_row(s->slots[0],
+                     (const uint32_t*)pixels,
+                     (size_t)VIDEO_SCALE_W(s->dims) * VIDEO_SCALE_H(s->dims), rgba);
+            else
+               for (y = 0; y < VIDEO_SCALE_H(s->dims); y++)
+                  image_texture_narrow_10bit_row(
+                     (uint32_t*)((uint8_t*)s->slots[0] + (size_t)y * s->pitch[0]),
+                     (const uint32_t*)pixels + (size_t)y * VIDEO_SCALE_W(s->dims),
+                     VIDEO_SCALE_W(s->dims), rgba);
+            s->inflight_slot = 0;
+            r = gfx_surface_prepare(s, s->slots[0], IMAGE_PIXFMT_8888,
+                  rgba, true, &fmt)
+               ? gfx_surface_submit_img(s, 0, fmt) : GFX_SURFACE_SUBMIT_FAILED;
+            if (r == GFX_SURFACE_SUBMIT_DONE)
+               gfx_surface_lend(s, 0);
+            gfx_surface_count(r);
+            return r;
+         }
+         GFX_INSTR_INC(GFX_INSTR_SUBMIT_COPY);
          if (s->pitch[0] == row)
             memcpy(s->slots[0], pixels, row * VIDEO_SCALE_H(s->dims));
          else
@@ -980,6 +1014,23 @@ enum gfx_surface_submit_result gfx_surface_submit_pixels(gfx_surface_t *s,
    return r;
 }
 
+enum gfx_surface_submit_result gfx_surface_submit_pixels_held(gfx_surface_t *s,
+      const void *pixels, bool rgba)
+{
+   enum gfx_surface_submit_result r;
+   uint8_t fmt;
+   if (!s || !pixels || !s->num_slots)
+      return GFX_SURFACE_SUBMIT_FAILED;
+   if (s->inflight)
+      return GFX_SURFACE_SUBMIT_BUSY;
+   if (s->lent || GFX_SURFACE_IS_PLANAR(s) || gfx_surface_must_narrow(s->pixfmt))
+      return gfx_surface_submit_pixels(s, pixels, rgba);
+   r = gfx_surface_prepare(s, pixels, s->pixfmt, rgba, false, &fmt)
+      ? gfx_surface_submit_img(s, 0, fmt) : GFX_SURFACE_SUBMIT_FAILED;
+   gfx_surface_count(r);
+   return r;
+}
+
 void gfx_surface_set_yuv(gfx_surface_t *s, unsigned flags)
 {
    if (s && GFX_SURFACE_IS_PLANAR(s))
@@ -987,8 +1038,8 @@ void gfx_surface_set_yuv(gfx_surface_t *s, unsigned flags)
             | IMAGE_YUV_FLAG_FULL_RANGE | IMAGE_YUV_FLAG_BT709));
 }
 
-enum gfx_surface_submit_result gfx_surface_submit_planes(gfx_surface_t *s,
-      const gfx_surface_planes_t *p, bool rgba)
+static enum gfx_surface_submit_result gfx_surface_submit_planes_internal(gfx_surface_t *s,
+      const gfx_surface_planes_t *p, bool rgba, bool held)
 {
    enum gfx_surface_submit_result r;
    uint8_t fmt;
@@ -1005,10 +1056,9 @@ enum gfx_surface_submit_result gfx_surface_submit_planes(gfx_surface_t *s,
       return GFX_SURFACE_SUBMIT_BUSY;
    }
 #ifdef HAVE_THREADS
-   /* The video thread reads planes after this returns, and these are
-    * the caller's: into slot 0 with them. A conversion needs no copy,
-    * its result being the surface's. */
-   if (     video_driver_thread_wrapper_active()
+   /* Without a lease the video thread needs its own planes. CPU
+    * conversion already writes into the surface's owned buffer. */
+   if (     !held && video_driver_thread_wrapper_active()
          && video_driver_supports_texture_format(TEXTURE_GPU_FORMAT_YUV420))
    {
       if (!gfx_surface_slot_writable(s, 0))
@@ -1020,12 +1070,26 @@ enum gfx_surface_submit_result gfx_surface_submit_planes(gfx_surface_t *s,
       gfx_surface_planes_copy(s, p, s->slots[0]);
       return gfx_surface_submit(s, 0, rgba);
    }
+#else
+   (void)held;
 #endif
    r = gfx_surface_planar(s, p, rgba, &fmt)
       ? gfx_surface_submit_img(s, 0, fmt)
       : GFX_SURFACE_SUBMIT_FAILED;
    gfx_surface_count(r);
    return r;
+}
+
+enum gfx_surface_submit_result gfx_surface_submit_planes(gfx_surface_t *s,
+      const gfx_surface_planes_t *p, bool rgba)
+{
+   return gfx_surface_submit_planes_internal(s, p, rgba, false);
+}
+
+enum gfx_surface_submit_result gfx_surface_submit_planes_held(gfx_surface_t *s,
+      const gfx_surface_planes_t *p, bool rgba)
+{
+   return gfx_surface_submit_planes_internal(s, p, rgba, true);
 }
 
 enum gfx_surface_submit_result gfx_surface_submit_external(gfx_surface_t *s,

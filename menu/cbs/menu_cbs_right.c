@@ -60,6 +60,9 @@
 
 /* Forward declarations */
 int action_ok_core_lock(const char *path, const char *label, unsigned type, size_t idx, size_t entry_idx);
+#ifdef HAVE_CORE_SIGNATURES
+int action_ok_core_signature_check(const char *path, const char *label, unsigned type, size_t idx, size_t entry_idx);
+#endif
 int action_ok_core_set_standalone_exempt(const char *path, const char *label, unsigned type, size_t idx, size_t entry_idx);
 
 extern struct key_desc key_descriptors[RARCH_MAX_KEYS];
@@ -395,6 +398,25 @@ static int action_right_shader_filter_pass(unsigned type, const char *label,
 
    return 0;
 }
+
+#ifdef HAVE_SLANG
+static int action_right_shader_simulated_res_pass(unsigned type,
+      const char *label, bool wraparound)
+{
+   unsigned pass = type - MENU_SETTINGS_SHADER_PASS_SIMULATED_RES_0;
+   struct video_shader *shader = menu_shader_get();
+   struct video_shader_pass *shader_pass = shader
+      ? &shader->pass[pass] : NULL;
+
+   if (!shader_pass)
+      return -1;
+
+   shader_pass->use_simulated_res = !shader_pass->use_simulated_res;
+   shader->flags                 |= SHDR_FLAG_MODIFIED;
+
+   return 0;
+}
+#endif
 
 static int action_right_shader_filter_default(unsigned type, const char *label,
       bool wraparound)
@@ -1189,6 +1211,14 @@ static int action_right_core_lock(unsigned type, const char *label,
    return action_ok_core_lock(label, label, type, 0, 0);
 }
 
+#ifdef HAVE_CORE_SIGNATURES
+static int action_right_core_signature_check(unsigned type, const char *label,
+      bool wraparound)
+{
+   return action_ok_core_signature_check(label, label, type, 0, 0);
+}
+#endif
+
 static int action_right_core_set_standalone_exempt(unsigned type, const char *label,
       bool wraparound)
 {
@@ -1322,6 +1352,7 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
          case FILE_TYPE_AUDIOFILTER:
          case FILE_TYPE_CONFIG:
          case FILE_TYPE_USE_DIRECTORY:
+         case FILE_TYPE_VULKAN_DRIVER_SYSTEM:
          case FILE_TYPE_PLAYLIST_ENTRY:
          case MENU_INFO_MESSAGE:
          case FILE_TYPE_DOWNLOAD_CORE:
@@ -1333,7 +1364,6 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
          case FILE_TYPE_PLAYLIST_COLLECTION:
          case FILE_TYPE_DOWNLOAD_CORE_CONTENT:
          case FILE_TYPE_DOWNLOAD_CORE_SYSTEM_FILES:
-         case FILE_TYPE_DOWNLOAD_THUMBNAIL_CONTENT:
          case FILE_TYPE_DOWNLOAD_URL:
          case FILE_TYPE_SCAN_DIRECTORY:
          case FILE_TYPE_MANUAL_SCAN_DIRECTORY:
@@ -1369,6 +1399,11 @@ static int menu_cbs_init_bind_right_compare_type(menu_file_list_cbs_t *cbs,
          case MENU_SETTING_ACTION_CORE_LOCK:
             BIND_ACTION_RIGHT(cbs, action_right_core_lock);
             break;
+#ifdef HAVE_CORE_SIGNATURES
+         case MENU_SETTING_ACTION_CORE_SIGNATURE_CHECK:
+            BIND_ACTION_RIGHT(cbs, action_right_core_signature_check);
+            break;
+#endif
          case MENU_SETTING_ACTION_CORE_SET_STANDALONE_EXEMPT:
             BIND_ACTION_RIGHT(cbs, action_right_core_set_standalone_exempt);
             break;
@@ -1433,6 +1468,11 @@ static int menu_cbs_init_bind_right_compare_label(menu_file_list_cbs_t *cbs,
             case MENU_ENUM_LABEL_VIDEO_SHADER_FILTER_PASS:
 #if defined(HAVE_CG) || defined(HAVE_GLSL) || defined(HAVE_SLANG) || defined(HAVE_HLSL)
                BIND_ACTION_RIGHT(cbs, action_right_shader_filter_pass);
+#endif
+               break;
+            case MENU_ENUM_LABEL_VIDEO_SHADER_SIMULATED_RES_PASS:
+#if defined(HAVE_SLANG)
+               BIND_ACTION_RIGHT(cbs, action_right_shader_simulated_res_pass);
 #endif
                break;
             case MENU_ENUM_LABEL_VIDEO_SHADER_DEFAULT_FILTER:
